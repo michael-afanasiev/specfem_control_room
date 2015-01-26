@@ -10,7 +10,8 @@ import numpy as np
 from itertools import repeat
 from multiprocessing import Pool, cpu_count
 
-parser = argparse.ArgumentParser (description="Convolves with a gaussian sourcetime function.")
+parser = argparse.ArgumentParser (description="Convolves with a gaussian "
+    "sourcetime function.")
 
 parser.add_argument (
   '--half_duration', help='Half duration of the gaussian', required=True, metavar='half duration',
