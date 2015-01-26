@@ -1,1 +1,4 @@
 params.txt
+*log*
+*.e
+*.o

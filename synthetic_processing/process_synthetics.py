@@ -3,6 +3,7 @@
 import math
 import argparse
 import os
+import obspy
 import numpy as np
 
 
@@ -20,6 +21,19 @@ class SyntheticSeismogram(object):
         self.t, self.data = temp[:, 0], temp[:, 1]
         self.dt = self.t[1] - self.t[0]
         self.orig_len = len(self.t)
+        self.fname = file_name
+
+        self.tr = obspy.Trace(data=self.data)
+        self.tr.stats.delta = self.dt
+        self.tr.stats.station, self.tr.stats.network, self.tr.stats.channel = \
+            os.path.basename(self.fname).split('.')[:3]
+
+        if 'MXN' in self.tr.stats.channel:
+            self.tr.stats.channel = 'X'
+        elif 'MXE' in self.tr.stats.channel:
+            self.tr.stats.channel = 'Y'
+        elif 'MXZ' in self.tr.stats.channel:
+            self.tr.stats.channel = 'Z'
 
     def fill_to_start_time(self, time_shift):
         """
@@ -93,6 +107,33 @@ class SyntheticSeismogram(object):
         self.t = self.t[:self.orig_len]
         self.data = self.data[:self.orig_len]
 
+    def filter(self, min_period, max_period):
+        """
+        Performs a bandpass filtering and renaming of station and channels to
+        fit into LASIF's world.
+        """
+
+        self.tr.data = self.data
+
+        self.tr.filter('lowpass', freq=(1 / min_period), corners=5,
+                       zerophase=True)
+        self.tr.filter('highpass', freq=(1 / max_period), corners=2,
+                       zerophase=True)
+
+        self.data = self.tr.data
+        
+    def write_sac(self, file):
+        """
+        Write a sac file.
+        
+        :file: File name.
+        """
+        
+        base_path = os.path.dirname(file)
+        file_name = self.tr.stats.network + '.' + self.tr.stats.station + '.' +\
+            self.tr.stats.channel + '.mseed'
+        write_path = os.path.join(base_path, file_name)
+        self.tr.write(write_path, format='MSEED')
 
 class CMTSolution(object):
 
@@ -111,7 +152,7 @@ class CMTSolution(object):
         self.half_duration = 3.805
         self.source_decay_mimic_triangle = 1.6280
         self.alpha = self.source_decay_mimic_triangle / self.half_duration
-
+        
 # ---
 parser = argparse.ArgumentParser(description='Performs post processing on a '
                                              'directory of .ascii seismograms')
@@ -120,6 +161,10 @@ parser.add_argument('-f', type=str, help='Path to ascii seismogram file, or '
                     dest='seismo_file', required=True)
 parser.add_argument('-cmt', type=str, help='Path to cmt solution',
                     dest='cmt_file', required=True)
+parser.add_argument(
+    '--min_p', type=float, help='Minimum period', required=True)
+parser.add_argument(
+    '--max_p', type=float, help='Maximum period', required=True)
 parser.add_argument('--whole_directory', help='Loop through all seismograms '
                     'in a directory, rather than just a single one.',
                     action='store_true')
@@ -136,7 +181,7 @@ if args.whole_directory:
         if file.endswith('.ascii'):
             target_files.append(os.path.join(args.seismo_file, file))
 else:
-    target_files = args.seismo_file
+    target_files.append(args.seismo_file)
 
 for file in target_files:
 
@@ -147,4 +192,6 @@ for file in target_files:
     seismogram.convolve_stf(cmtsolution)
     seismogram.convert_to_velocity()
     seismogram.reset_length()
-    seismogram.write_specfem_ascii(file + '.convolved')
+    seismogram.filter(args.min_p, args.max_p)
+    seismogram.write_specfem_ascii(file + '.convolved.filtered')
+    seismogram.write_sac(file)

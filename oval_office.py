@@ -75,6 +75,23 @@ def read_parameter_file(filename):
     return parameters
 
 
+def get_iteration_xml_path():
+    """
+    A little function to grab the iteration xml path from the lasif directory.
+    """
+    
+    # Find iteration xml file.
+    iteration_xml_path = os.path.join(p['lasif_path'],
+                                      'ITERATIONS/ITERATION_%s.xml'
+                                      % (p['iteration_name']))
+
+    if not os.path.exists(iteration_xml_path):
+        raise PathError('Your iteration xml file does not exist in the '
+                  'location you specified.')
+  
+    return iteration_xml_path
+
+
 def safe_copy(source, dest):
     """
     Sets up a file copy that won't fail for a stupid reason.
@@ -131,6 +148,23 @@ def setup_dir_tree(event_path):
     mkdir_p(event_path + '/DATABASES_MPI')
     mkdir_p(event_path + '/DATA/cemRequest')
 
+def find_bandpass_parameters(iteration_xml_path):
+    """
+    Quickly parses the iteration xml file, to extract the high and lowpass 
+    period for filtering purposes.
+
+    :iteration_xml_path: Path the xml file driving the requested iteration.
+    """
+    
+    tree = ET.parse(iteration_xml_path)
+    root = tree.getroot()
+    for name in root.findall('data_preprocessing'):
+        for period in name.findall('highpass_period'):
+            highpass_period = period
+        for period in name.findall('lowpass_period'):
+            lowpass_period = period
+    
+    return float(highpass_period.text), float(lowpass_period.text)
 
 def find_event_names(iteration_xml_path):
     """
@@ -172,13 +206,7 @@ def setup_run():
     """
 
     # Find iteration xml file.
-    iteration_xml_path = os.path.join(p['lasif_path'],
-                                      'ITERATIONS/ITERATION_%s.xml'
-                                      % (p['iteration_name']))
-
-    if not os.path.exists(iteration_xml_path):
-        raise PathError('Your iteration xml file does not exist in the location\
-            you specified.')
+    iteration_xml_path = get_iteration_xml_path()
     event_list = find_event_names(iteration_xml_path)
 
     # Create the forward modelling directories.
@@ -329,8 +357,7 @@ def submit_solver(first_job, last_job):
     subprocess.Popen(['sbatch', '--array=%s-%s' % (first_job, last_job),
                      'jobArray_solver_daint.sbatch',
                       p['iteration_name']]).wait()
-
-
+                      
 def convolve_stf(first_job, last_job):
     """
     Runs the parallel convolve_stf functionality in synthetic_processing.
@@ -344,10 +371,16 @@ def convolve_stf(first_job, last_job):
     except OSError:
         raise WrongDirectoryError("You're not in the control room directory.")
 
+    highpass_period, lowpass_period = find_bandpass_parameters(
+                                        get_iteration_xml_path())
+                                        
+        
     subprocess.Popen(['sbatch', '--array=%s-%s' % (first_job, last_job),
-                      'convolve_source_time_function_parallel.sh',
-                      solver_base_path]).wait()
+                      'process_synthetics_parallel.sh', solver_base_path,
+                      p['lasif_path'], str(highpass_period), 
+                      str(lowpass_period)]).wait()
 
+                                        
     os.chdir('../')
     with open('master_log.txt', 'a') as file:
         file.write("Ran convolution with stf for array jobs %s to %s on "

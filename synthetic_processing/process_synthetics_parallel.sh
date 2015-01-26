@@ -14,13 +14,15 @@ export MV2_ENABLE_AFFINITY=0
 export KMP_AFFINITY=compact
 export OMP_NUM_THREADS=8
 
-if [ "$2" == '' ]; then
-  echo "Usage: ./processSyntheticsParallel [master_forward_dir] [lasif_base_dir]"
+if [ "$4" = '' ]; then
+  echo 'Usage: ./processSyntheticsParallel [master_forward_dir] [lasif_base_dir] [min_period] [max_period]'
   exit
 fi
 
 iterationDir=$1
 lasifBaseDir=$2
+minPeriod=$3
+maxPeriod=$4
 
 shopt -s nullglob
 
@@ -33,12 +35,15 @@ echo $myEventRaw
 myEvent=${array[$SLURM_ARRAY_TASK_ID]}
 seismo_dir=$(readlink -m $myEvent/OUTPUT_FILES/)
 
+# Parse CMT file location.
+cmtFile=$myEvent/DATA/CMTSOLUTION
+
 # Get name of lasif synthetic dir
 iterationName=$(basename $iterationDir)
 myEventRaw=${myEvent##*/}
 lasifSyntheticDir=$(readlink -m $lasifBaseDir/SYNTHETICS/$myEventRaw/ITERATION_$iterationName)
 
-aprun -n 1 -N 1 ./processSynthetics.py --seismogram_dir $seismo_dir --write_dir $seismo_dir --min_period 60 --max_period 120
+aprun -n 1 -N 1 ./process_synthetics.py -f $seismo_dir --min_p $minPeriod --max_p $maxPeriod -cmt $cmtFile --whole_directory
 
 # Change to directory and tar files.
 cd $seismo_dir
