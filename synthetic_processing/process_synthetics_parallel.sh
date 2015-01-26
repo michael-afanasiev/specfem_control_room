@@ -5,7 +5,7 @@
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --ntasks-per-node=1
-#SBATCH --cpus-per-task=1
+#SBATCH --cpus-per-task=8
 #SBATCH --time=00:30:00
 #SBATCH --output=./logs/process.%A.%a.o
 #SBATCH --error=./logs/process.%A.%a.e
@@ -43,7 +43,7 @@ iterationName=$(basename $iterationDir)
 myEventRaw=${myEvent##*/}
 lasifSyntheticDir=$(readlink -m $lasifBaseDir/SYNTHETICS/$myEventRaw/ITERATION_$iterationName)
 
-aprun -n 1 -N 1 ./process_synthetics.py -f $seismo_dir --min_p $minPeriod --max_p $maxPeriod -cmt $cmtFile --whole_directory
+aprun -n 1 -N 1 -d 8 ./process_synthetics.py -f $seismo_dir --min_p $minPeriod --max_p $maxPeriod -cmt $cmtFile --whole_directory
 
 # Change to directory and tar files.
 cd $seismo_dir

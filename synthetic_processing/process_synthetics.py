@@ -6,6 +6,7 @@ import os
 import obspy
 import numpy as np
 
+from multiprocessing import Pool, cpu_count
 
 class SyntheticSeismogram(object):
 
@@ -153,6 +154,20 @@ class CMTSolution(object):
         self.source_decay_mimic_triangle = 1.6280
         self.alpha = self.source_decay_mimic_triangle / self.half_duration
         
+        
+def run_processing_script(file):
+    
+    print 'Processing: ' + os.path.basename(file)
+    seismogram = SyntheticSeismogram(file)
+    cmtsolution = CMTSolution(args.cmt_file)
+    seismogram.fill_to_start_time(cmtsolution.time_shift)
+    seismogram.convolve_stf(cmtsolution)
+    seismogram.convert_to_velocity()
+    seismogram.reset_length()
+    seismogram.filter(args.min_p, args.max_p)
+    seismogram.write_specfem_ascii(file + '.convolved.filtered')
+    seismogram.write_sac(file)
+    
 # ---
 parser = argparse.ArgumentParser(description='Performs post processing on a '
                                              'directory of .ascii seismograms')
@@ -183,15 +198,8 @@ if args.whole_directory:
 else:
     target_files.append(args.seismo_file)
 
-for file in target_files:
-
-    print 'Processing: ' + os.path.basename(file)
-    seismogram = SyntheticSeismogram(file)
-    cmtsolution = CMTSolution(args.cmt_file)
-    seismogram.fill_to_start_time(cmtsolution.time_shift)
-    seismogram.convolve_stf(cmtsolution)
-    seismogram.convert_to_velocity()
-    seismogram.reset_length()
-    seismogram.filter(args.min_p, args.max_p)
-    seismogram.write_specfem_ascii(file + '.convolved.filtered')
-    seismogram.write_sac(file)
+print "Running on " + str(cpu_count()) + " cores."
+if __name__ == '__main__':
+    
+    pool = Pool(processes=cpu_count()/2)
+    pool.map(run_processing_script, target_files)
