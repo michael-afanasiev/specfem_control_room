@@ -357,10 +357,50 @@ def submit_solver(first_job, last_job):
     subprocess.Popen(['sbatch', '--array=%s-%s' % (first_job, last_job),
                      'jobArray_solver_daint.sbatch',
                       p['iteration_name']]).wait()
-                      
-def convolve_stf(first_job, last_job):
+
+def sync_LASIF_to_scratch():
     """
-    Runs the parallel convolve_stf functionality in synthetic_processing.
+    Syncs your LASIF directory on /project to /scratch.
+    """
+
+    current_dir = os.getcwd()
+    print_ylw('Syncing LASIF directory...')
+    lasif_dirname = os.path.basename(p['lasif_path'])
+    os.chdir(os.path.join(p['lasif_path'], '../'))
+    subprocess.Popen(['rsync', '-av', lasif_dirname, p['scratch_path']]).wait()
+    os.chdir(current_dir)
+    
+def sync_scratch_to_LASIF():
+    """
+    Syncs your lasif mirror on scratch to that on /project.
+    """
+    
+    current_dir = os.getcwd()
+    print_ylw('Syncing LASIF directory...')
+    lasif_dirname = os.path.basename(p['lasif_path'])
+    lasif_project_path = os.path.join(p['lasif_path'], '../')
+    os.chdir(p['scratch_path'])
+    subprocess.Popen(['rsync', '-av', lasif_dirname, lasif_project_path]).wait()
+    os.chdir(current_dir)
+    
+def process_data(first_job, last_job):
+    
+    try:
+        os.chdir('./data_processing')
+    except OSError:
+        raise WrongDirectoryError("You're not in the control room directory.")
+    
+    sync_LASIF_to_scratch()
+
+    lasif_dirname = os.path.basename(p['lasif_path'])
+    lasif_scratch_dir = os.path.join(p['scratch_path'], lasif_dirname)
+    subprocess.Popen(['sbatch', '--array=%s-%s' % (first_job, last_job),
+                      'preprocess_data_parallel.sh', lasif_scratch_dir,
+                      p['lasif_path'], p['iteration_name']]).wait()
+                      
+def process_synthetics(first_job, last_job):
+    """
+    Runs the parallel process_synthetics functionality in synthetic_processing.
 
     :first_job: The job array index of the first job to submit (i.e. 0)
     :last_job: The job array index of the last job to submit (i.e. n_events-1)
@@ -373,13 +413,11 @@ def convolve_stf(first_job, last_job):
 
     highpass_period, lowpass_period = find_bandpass_parameters(
                                         get_iteration_xml_path())
-                                        
-        
+                                                
     subprocess.Popen(['sbatch', '--array=%s-%s' % (first_job, last_job),
                       'process_synthetics_parallel.sh', solver_base_path,
                       p['lasif_path'], str(highpass_period), 
                       str(lowpass_period)]).wait()
-
                                         
     os.chdir('../')
     with open('master_log.txt', 'a') as file:
@@ -404,8 +442,12 @@ parser.add_argument('--submit_mesher', action='store_true',
 parser.add_argument('--submit_solver', action='store_true',
                     help='Submit the job array script for the current '
                     'iteration.')
-parser.add_argument('--convolve_stf', action='store_true',
-                    help='Convolve with source time function.')
+parser.add_argument('--process_synthetics', action='store_true',
+                    help='Process synthetic siesmograms.')
+parser.add_argument('--sync_lasif', action='store_true',
+                    help='Sync lasif directory from /project to /scratch')
+parser.add_argument('--process_data', action='store_true',
+                    help='Process rawData.tar files on scratch.')
 parser.add_argument('-fj', type=str, help='First index in job array to submit',
                     metavar='first_job', dest='first_job')
 parser.add_argument('-lj', type=str, help='Last index in job array to submit',
@@ -414,8 +456,10 @@ parser.add_argument('-lj', type=str, help='Last index in job array to submit',
 args = parser.parse_args()
 if args.submit_solver and args.first_job is None and args.last_job is None:
     parser.error('Submitting the solver required -fj and -lj arguments.')
-if args.convolve_stf and args.first_job is None and args.last_job is None:
-    parser.error('Convolving with stf required -fj and -lj arguments.')
+if args.process_synthetics and args.first_job is None and args.last_job is None:
+    parser.error('Processing synthetics requires -fj and -lj arguments.')
+if args.process_data and args.first_job is None and args.last_job is None:
+    parser.error('Processing data requires -fj and -lj arguments.')
 
 p = read_parameter_file(args.filename)
 
@@ -433,5 +477,9 @@ elif args.submit_mesher:
     submit_mesher()
 elif args.submit_solver:
     submit_solver(args.first_job, args.last_job)
-elif args.convolve_stf:
-    convolve_stf(args.first_job, args.last_job)
+elif args.process_synthetics:
+    process_synthetics(args.first_job, args.last_job)
+elif args.process_data:
+    process_data(args.first_job, args.last_job)
+elif args.sync_lasif:
+    sync_LASIF()
