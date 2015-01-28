@@ -43,6 +43,7 @@ iterationName=$(basename $iterationDir)
 myEventRaw=${myEvent##*/}
 lasifSyntheticDir=$(readlink -m $lasifBaseDir/SYNTHETICS/$myEventRaw/ITERATION_$iterationName)
 
+cd ../components/
 aprun -n 1 -N 1 -d 8 ./process_synthetics.py -f $seismo_dir --min_p $minPeriod --max_p $maxPeriod -cmt $cmtFile --whole_directory
 
 # Change to directory and tar files.
