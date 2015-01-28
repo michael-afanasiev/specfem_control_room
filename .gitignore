@@ -2,3 +2,4 @@ params.txt
 *log*
 *.e
 *.o
+*.pyc
