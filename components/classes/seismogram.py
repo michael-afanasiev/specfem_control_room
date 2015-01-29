@@ -4,6 +4,9 @@ import os
 import math
 import obspy
 import numpy as np
+import matplotlib.pyplot as plt
+
+from scipy import signal
 
 class SyntheticSeismogram(object):
 
@@ -15,23 +18,41 @@ class SyntheticSeismogram(object):
         :file_name: File name of ascii specfem3d_globe seismogram.
         """
 
-        temp = np.loadtxt(file_name)
-        self.t, self.data = temp[:, 0], temp[:, 1]
-        self.dt = self.t[1] - self.t[0]
-        self.orig_len = len(self.t)
-        self.fname = file_name
+        if '.ascii' in file_name:
+            temp = np.loadtxt(file_name)
+            self.t, self.data = temp[:, 0], temp[:, 1]
+            self.dt = self.t[1] - self.t[0]
+            self.orig_len = len(self.t)
+            self.fname = file_name
+            self.hz = (1/self.dt)
 
-        self.tr = obspy.Trace(data=self.data)
-        self.tr.stats.delta = self.dt
-        self.tr.stats.station, self.tr.stats.network, self.tr.stats.channel = \
-            os.path.basename(self.fname).split('.')[:3]
+            self.tr = obspy.Trace(data=self.data)
+            self.tr.stats.delta = self.dt
+            self.tr.stats.station, self.tr.stats.network, self.tr.stats.channel = \
+                os.path.basename(self.fname).split('.')[:3]
 
-        if 'MXN' in self.tr.stats.channel:
-            self.tr.stats.channel = 'X'
-        elif 'MXE' in self.tr.stats.channel:
-            self.tr.stats.channel = 'Y'
-        elif 'MXZ' in self.tr.stats.channel:
-            self.tr.stats.channel = 'Z'
+            if 'MXN' in self.tr.stats.channel:
+                self.tr.stats.channel = 'X'
+            elif 'MXE' in self.tr.stats.channel:
+                self.tr.stats.channel = 'Y'
+            elif 'MXZ' in self.tr.stats.channel:
+                self.tr.stats.channel = 'Z'
+        else:
+            self.tr = obspy.read(file_name)[0]
+            self.data = self.tr.data
+            self.dt = self.tr.stats.delta
+            self.orig_len = len(self.data)
+            self.fname = file_name            
+            
+        self.hz = (1/self.dt)
+        
+    def read_source_time_function(self, file_name):
+        """        
+        Reads in the specfem source time function corresponding to a given 
+        seismogram.
+        """        
+        
+        self.stf = np.loadtxt(file_name)[:, 1]            
 
     def fill_to_start_time(self, time_shift):
         """
@@ -120,6 +141,30 @@ class SyntheticSeismogram(object):
 
         self.data = self.tr.data
         
+    def fourier_transform(self):
+        """
+        Computes the power spectrum of a seismogram.
+        """        
+        
+        self.fourier_domain = np.fft.rfft(self.data)
+        self.amp_spectrum = np.abs(self.fourier_domain)
+        self.pow_spectrum = np.abs(self.fourier_domain)**2
+        self.frequencies = np.fft.rfftfreq(len(self.data), self.dt)
+        print self.dt
+        
+    def plot_seismogram(self):
+        """
+        Plots the seismogram in the time domain.
+        """
+        
+        plt.plot(self.ifft)     
+        plt.plot(self.data, '-')
+        plt.show()
+        
+    def inverse_fourier_transform(self):
+        
+        self.ifft = np.fft.irfft(self.fourier_domain)
+        
     def write_sac(self, file):
         """
         Write a sac file.
@@ -132,3 +177,12 @@ class SyntheticSeismogram(object):
             self.tr.stats.channel + '.mseed'
         write_path = os.path.join(base_path, file_name)
         self.tr.write(write_path, format='MSEED')
+        
+    def plot_power_spectrum(self, units='hz'):
+        
+        plt.plot(self.frequencies, self.pow_spectrum)
+        plt.title('Power spectrum of %s' % (self.fname))
+        plt.xlabel('Frequency (Hz)')
+        plt.ylabel('Power')
+        plt.yscale('log')
+        plt.show()
