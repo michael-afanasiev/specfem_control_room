@@ -240,7 +240,13 @@ def setup_run():
                         safe_copy(source, dest)
 
     # Copy one instance of forward files to specfem base directory.
-    source = os.path.join(p['lasif_path'], 'SUBMISSION', 'Par_file')
+    if not os.path.isdir(os.path.join(p['lasif_path'], 'SUBMISSION', 
+                                       p['iteration_name'])):
+        raise PathError('You have not yet set up a job submission directory '
+                        'for this iteration')
+    
+    source = os.path.join(p['lasif_path'], 'SUBMISSION', p['iteration_name'], 
+                          'Par_file')
     dest = os.path.join(p['specfem_root'], 'DATA')
     safe_copy(source, dest)
 
@@ -270,7 +276,7 @@ def setup_run():
 
     # Copy jobarray script to base directory.
     print_ylw('Copying jobarray sbatch script...')
-    source = os.path.join(p['lasif_path'], 'SUBMISSION',
+    source = os.path.join(p['lasif_path'], 'SUBMISSION', p['iteration_name'],
                           'jobArray_solver_daint.sbatch')
     dest = solver_root_path
     safe_copy(source, dest)
@@ -289,7 +295,7 @@ def setup_run():
         safe_copy(source, dest)
 
     # Copy submission script to mesh directory.
-    source = os.path.join(p['lasif_path'], 'SUBMISSION',
+    source = os.path.join(p['lasif_path'], 'SUBMISSION', p['iteration_name'],
                           'job_mesher_daint.sbatch')
     dest = os.path.join(solver_base_path, 'mesh')
     safe_copy(source, dest)
