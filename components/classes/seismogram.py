@@ -17,8 +17,14 @@ class SyntheticSeismogram(object):
 
         :file_name: File name of ascii specfem3d_globe seismogram.
         """
+        
+        if file_name.endswith('.adj'):
+            temp = np.loadtxt(file_name)
+            self.data = temp[:]
+            self.t    = self.data
+            self.dt   = 1
 
-        if '.ascii' in file_name:
+        elif file_name.endswith('.ascii'):
             temp = np.loadtxt(file_name)
             self.t, self.data = temp[:, 0], temp[:, 1]
             self.dt = self.t[1] - self.t[0]
@@ -28,6 +34,7 @@ class SyntheticSeismogram(object):
 
             self.tr = obspy.Trace(data=self.data)
             self.tr.stats.delta = self.dt
+            self.tr.stats.sampling_rate = 1 / self.dt
             self.tr.stats.station, self.tr.stats.network, self.tr.stats.channel = \
                 os.path.basename(self.fname).split('.')[:3]
 
@@ -37,6 +44,11 @@ class SyntheticSeismogram(object):
                 self.tr.stats.channel = 'Y'
             elif 'MXZ' in self.tr.stats.channel:
                 self.tr.stats.channel = 'Z'
+                
+            # Reverse component to agree with LASIF.
+            if self.tr.stats.channel == 'X':
+                self.data = self.data * (-1)
+            
         else:
             self.tr = obspy.read(file_name)[0]
             self.data = self.tr.data
@@ -75,6 +87,11 @@ class SyntheticSeismogram(object):
         self.t = np.insert(self.t, 0, new_time_arr)
         self.data = np.insert(self.data, 0, new_wave_arr)
         self.length = len(self.data)
+
+    def get_start_time(self, time):
+
+        self.tr.stats.starttime = time
+        
 
     def write_specfem_ascii(self, file_name):
         """
@@ -134,6 +151,7 @@ class SyntheticSeismogram(object):
 
         self.tr.data = self.data
 
+        print min_period, max_period, 'min', 'max'
         self.tr.filter('lowpass', freq=(1 / min_period), corners=5,
                        zerophase=True)
         self.tr.filter('highpass', freq=(1 / max_period), corners=2,

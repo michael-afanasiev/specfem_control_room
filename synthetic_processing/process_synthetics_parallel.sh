@@ -48,6 +48,6 @@ aprun -n 1 -N 1 -d 8 ./process_synthetics.py -f $seismo_dir --min_p $minPeriod -
 
 # Change to directory and tar files.
 cd $seismo_dir
-tar -cvf ./synthetics.tar *.mseed
+tar -cvf ./data.tar *.mseed
 mkdir -p $lasifSyntheticDir
-mv $seismo_dir/synthetics.tar $lasifSyntheticDir
+mv $seismo_dir/data.tar $lasifSyntheticDir

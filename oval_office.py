@@ -1,14 +1,17 @@
 #!/usr/bin/env python
 
 import os
+import sys
 import errno
 import shutil
 import subprocess
 import argparse
 import datetime
+import numpy as np
 
 import xml.etree.ElementTree as ET
-
+import components.classes.seismogram as seismogram
+import components.classes.cmt_solution as cmt_solution
 
 class ParameterError(Exception):
     pass
@@ -369,6 +372,8 @@ def sync_LASIF_to_scratch():
     Syncs your LASIF directory on /project to /scratch.
     """
 
+    clean_mseed()
+
     current_dir = os.getcwd()
     print_ylw('Syncing LASIF directory...')
     lasif_dirname = os.path.basename(p['lasif_path'])
@@ -404,6 +409,214 @@ def process_data(first_job, last_job):
                       'preprocess_data_parallel.sh', lasif_scratch_dir,
                       p['lasif_path'], p['iteration_name']]).wait()
                       
+def distribute_adjoint_sources():
+    
+    lasif_output_dir = os.path.join(p['lasif_path'], 'OUTPUT')
+    os.chdir(os.path.join(solver_base_path))
+    for dir in os.listdir('./'):
+        print "Distributing... to " + dir
+        adjoint_names = []
+        mkdir_p(os.path.join(dir, 'SEM'))
+        
+        adj_src_write_path = os.path.join(dir, 'SEM')
+
+        for output_dir in os.listdir(lasif_output_dir):
+            if dir in output_dir:
+                for adjoint in os.listdir(os.path.join(lasif_output_dir, 
+                                                       output_dir)):
+                    adj_src = os.path.join(lasif_output_dir, output_dir, 
+                                           adjoint)
+                                           
+                    if not adjoint.endswith('.adj'):
+                        continue
+                    
+                    safe_copy(adj_src, adj_src_write_path)                
+                                               
+                    stat_name = os.path.basename(adj_src).split('.')[0]
+                    if os.path.basename(stat_name) not in adjoint_names:
+                        adjoint_names.append(stat_name)
+                
+        print "writing station file"
+        stations_file = os.path.join(dir, 'DATA', 'STATIONS')    
+        adjoint_stat_file = os.path.join(dir, 'DATA', 'STATIONS_ADJOINT')
+        write_stations = open(adjoint_stat_file, 'w')
+        with open(stations_file, 'r') as input:
+            for line in input:
+                for adjoint_station_name in adjoint_names:
+                    if adjoint_station_name in line:
+                        write_stations.write(line)
+
+
+def destroy_all_but_raw():
+    """
+    Goes through both the scratch and project lasif directories, and cleans up
+    EVERYTHING that is not raw data (meaning: preprocessed data and synthetics).
+    """
+    
+    choice = str(raw_input("WARNING. DANGEROUS. DO YOU WANT TO PROCEED.\n"))
+    if choice != 'YES':
+        print 'Phew.'
+        return
+        
+    def clean_all_processed_data():
+        for dir in os.listdir('./'):
+            os.chdir(dir)
+            for datadir in os.listdir('./'):
+                if 'raw' in datadir:
+                    if os.path.exists(os.path.join('raw', 
+                        'preprocessedData.tar')):
+                        os.remove(os.path.join('raw', 'preprocessedData.tar'))
+#                if 'cache' in datadir:
+#                    os.remove(datadir)
+                if 'raw' not in datadir:
+                    if os.path.isdir(datadir):
+                        shutil.rmtree(datadir)
+                    elif os.path.exists(datadir):
+                        os.remove(datadir)
+
+            os.chdir('../')
+            
+    def clean_all_synthetics():
+        for dir in os.listdir('./'):
+            os.chdir(dir)
+            for datadir in os.listdir('./'):
+                if os.path.isdir(datadir):
+                    shutil.rmtree(datadir)
+                else:
+                    os.remove(datadir)     
+                
+            os.chdir('../')           
+            
+    os.chdir(os.path.join(p['lasif_path'], 'DATA'))
+    clean_all_processed_data()
+    
+#    os.chdir(os.path.join(p['lasif_path'], 'CACHE'))
+#    for file in os.listdir('./'):
+#        os.remove(file)
+    
+    os.chdir(os.path.join(p['lasif_path'], 'SYNTHETICS'))
+    clean_all_synthetics()
+        
+    lasif_dirname = os.path.basename(p['lasif_path'])
+    lasif_scratch_dir = os.path.join(p['scratch_path'], lasif_dirname)
+    
+    os.chdir(os.path.join(lasif_scratch_dir, 'DATA'))
+    clean_all_processed_data()
+    
+#    os.chdir(os.path.join(lasif_scratch_dir, 'CACHE'))
+#    for file in os.listdir('./'):
+#        os.remove(file)
+
+    os.chdir(os.path.join(lasif_scratch_dir, 'SYNTHETICS'))
+    clean_all_synthetics()
+    
+def unpack_mseed():
+    
+    if not args.event_name:
+        raise ParameterError("Need to specify event name with this option.")
+        
+    print "Unpacking data for " + args.event_name
+    
+    os.chdir(os.path.join(p['lasif_path'], 'DATA'))
+    for dir in os.listdir('./'):
+        if args.event_name in dir:
+            os.chdir(dir)
+            for dir2 in os.listdir('./'):
+                if os.path.isdir(dir2):
+                    os.chdir(dir2)
+                    if 'data.tar' in os.listdir('./'):
+                        subprocess.Popen(['tar', '-xvf', 'data.tar']).wait()
+                        os.remove('data.tar')
+                    os.chdir('../')
+
+            os.chdir('../')
+            
+    os.chdir(os.path.join(p['lasif_path'], 'SYNTHETICS'))
+    for dir in os.listdir('./'):
+        if args.event_name in dir:
+            os.chdir(dir)
+            for dir2 in os.listdir('./'):
+                if os.path.isdir(dir2):
+                    os.chdir(dir2)
+                    subprocess.Popen(['tar', '-xvf', 'data.tar']).wait()
+                    os.remove('data.tar')
+                    os.chdir('../')
+
+            os.chdir('../')
+                      
+def clean_mseed():
+    """
+    Goes through both project and scratch LASIF directories, and removes any
+    .mseed files. This is useful after looking at misfits with raw .mseeds. Of
+    course, the routine also tars everything back up.
+    """
+    
+    current_dir = os.getcwd()
+    def clean_mseed_dirtree(tar_file_name):
+        for dir in os.listdir('./'):
+            os.chdir(dir)
+            for datadir in os.listdir('./'):
+            
+                if os.path.isdir(datadir):
+                    os.chdir(datadir)
+                    if len(os.listdir('./')) == 0:
+                        os.chdir('../')
+                        continue
+                    if '.mseed' in os.listdir('./')[-1]:
+                        subprocess.Popen(['tar -cvf ' + tar_file_name + 
+                                          ' *.mseed'], shell=True).wait()
+                        for mseed in os.listdir('./'):
+                            if 'mseed' in mseed:
+                                os.remove(mseed)
+                    
+                    os.chdir('../')
+        
+            os.chdir('../')
+            
+    os.chdir(os.path.join(p['lasif_path'], 'DATA'))
+    clean_mseed_dirtree('data.tar');
+    
+    os.chdir(os.path.join(p['lasif_path'], 'SYNTHETICS'))
+    clean_mseed_dirtree('data.tar');
+    
+    lasif_dirname = os.path.basename(p['lasif_path'])
+    lasif_scratch_dir = os.path.join(p['scratch_path'], lasif_dirname)
+    
+    os.chdir(os.path.join(lasif_scratch_dir, 'DATA'))
+    clean_mseed_dirtree('data.tar');
+    
+    os.chdir(os.path.join(lasif_scratch_dir, 'SYNTHETICS'))
+    clean_mseed_dirtree('data.tar');
+    
+    os.chdir(current_dir)
+    
+def select_windows(first_job, last_job):
+    """
+    Selects windows in parallel.
+    """
+    
+    try:
+        os.chdir('./inversion_tools')
+    except OSError:
+        raise WrongDirectoryError("You're not in the control room directory.")
+        
+    lasif_dirname = os.path.basename(p['lasif_path'])
+    lasif_scratch_dir = os.path.join(p['scratch_path'], lasif_dirname)
+        
+    sync_LASIF_to_scratch()
+        
+    subprocess.Popen(['sbatch', '--array=%s-%s' % (first_job, last_job),
+                      'select_windows_parallel.sh', lasif_scratch_dir, 
+                      p['iteration_name']]).wait()
+                      
+    os.chdir('../')
+    with open('master_log.txt', 'a') as file:
+        file.write('Selected windows for array jobs %s to %s on '
+        % (first_job, last_job) + str(datetime.datetime.now())
+        + '\n')
+
+    subprocess.Popen(['rsync', '-av', lasif_scratch_dir, lasif_path]).wait()
+                          
 def process_synthetics(first_job, last_job):
     """
     Runs the parallel process_synthetics functionality in synthetic_processing.
@@ -422,8 +635,8 @@ def process_synthetics(first_job, last_job):
                                                 
     subprocess.Popen(['sbatch', '--array=%s-%s' % (first_job, last_job),
                       'process_synthetics_parallel.sh', solver_base_path,
-                      p['lasif_path'], str(highpass_period), 
-                      str(lowpass_period)]).wait()
+                      p['lasif_path'], str(lowpass_period), 
+                      str(highpass_period)]).wait()
                                         
     os.chdir('../')
     with open('master_log.txt', 'a') as file:
@@ -454,6 +667,18 @@ parser.add_argument('--sync_lasif', action='store_true',
                     help='Sync lasif directory from /project to /scratch')
 parser.add_argument('--process_data', action='store_true',
                     help='Process rawData.tar files on scratch.')
+parser.add_argument('--clean_mseed', action='store_true',
+                    help='Delete all .mseed files on project and scratch')
+parser.add_argument('--destroy_all_but_raw', action='store_true',
+                    help='Delete all .mseed files on project and scratch')
+parser.add_argument('--unpack_mseed', action='store_true',
+                    help='Unpack tarred seismograms for a given event')
+parser.add_argument('--select_windows', action='store_true',
+                    help='Unpack tarred seismograms for a given event')                    
+parser.add_argument('--event_name', type=str, help='Event name for use with '
+                    '--unpack_mseed')                               
+parser.add_argument('--distribute_adjoint_sources', 
+                    action='store_true')
 parser.add_argument('-fj', type=str, help='First index in job array to submit',
                     metavar='first_job', dest='first_job')
 parser.add_argument('-lj', type=str, help='Last index in job array to submit',
@@ -466,6 +691,8 @@ if args.process_synthetics and args.first_job is None and args.last_job is None:
     parser.error('Processing synthetics requires -fj and -lj arguments.')
 if args.process_data and args.first_job is None and args.last_job is None:
     parser.error('Processing data requires -fj and -lj arguments.')
+if args.select_windows and args.first_job is None and args.last_job is None:
+    parser.error('Selecting windows requires -fj and -lj arguments.')
 
 p = read_parameter_file(args.filename)
 
@@ -489,3 +716,13 @@ elif args.process_data:
     process_data(args.first_job, args.last_job)
 elif args.sync_lasif:
     sync_LASIF()
+elif args.clean_mseed:
+    clean_mseed()
+elif args.destroy_all_but_raw:
+    destroy_all_but_raw()
+elif args.unpack_mseed:
+    unpack_mseed()
+elif args.distribute_adjoint_sources:
+    distribute_adjoint_sources()
+elif args.select_windows:
+    select_windows(args.first_job, args.last_job)

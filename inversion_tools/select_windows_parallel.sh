@@ -30,19 +30,4 @@ myEvent=${array[$SLURM_ARRAY_TASK_ID]}
 myEvent=${myEvent%.xml}
 myEvent=${myEvent##*/}
 
-cd ./DATA/$myEvent/preprocessed_hp_0.00833_lp_0.01667_npts_153069_dt_0.142500/
-tar -xvf preprocessedData.tar
-rm -f preprocessedData.tar
-
-cd ../../../SYNTHETICS/$myEvent/ITERATION_$iterationName
-tar -xvf synthetics.tar
-rm -f synthetics.tar
-
-aprun -B lasif select_windows $iterationName $myEvent
-
-tar -cvf synthetics.tar *.mseed
-rm -f *.mseed
-
-cd ../../../DATA/$myEvent/preprocessed_hp_0.00833_lp_0.01667_npts_153069_dt_0.142500/
-tar -cvf preprocessedData.tar *.mseed
-rm -f *.mseed
+aprun -B lasif select_windows $iterationName $myEvent --read_only_caches

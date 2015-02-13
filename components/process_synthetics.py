@@ -5,6 +5,7 @@ import argparse
 import os
 import obspy
 import numpy as np
+import shutil
 
 from classes.seismogram import SyntheticSeismogram
 from classes.cmt_solution import CMTSolution
@@ -16,12 +17,13 @@ def run_processing_script(file):
     print 'Processing: ' + os.path.basename(file)
     seismogram = SyntheticSeismogram(file)
     cmtsolution = CMTSolution(args.cmt_file)
-    seismogram.fill_to_start_time(cmtsolution.time_shift)
+#    seismogram.fill_to_start_time(cmtsolution.time_shift)
+    seismogram.get_start_time(cmtsolution.start_time)
     seismogram.convolve_stf(cmtsolution)
     seismogram.convert_to_velocity()
-    seismogram.reset_length()
+#    seismogram.reset_length()
     seismogram.filter(args.min_p, args.max_p)
-    seismogram.write_specfem_ascii(file + '.convolved.filtered')
+    # seismogram.write_specfem_ascii(file + '.convolved.filtered')
     seismogram.write_sac(file)
     
 # ---
@@ -46,6 +48,10 @@ args = parser.parse_args()
 args.seismo_file = os.path.abspath(args.seismo_file)
 args.cmt_file = os.path.abspath(args.cmt_file)
 
+# Write to log file.
+with open("master_log.txt", "a") as myfile:
+  myfile.write("Filtering frequencies are %d and %d" % (1/args.max_p, 1/args.min_p))
+
 target_files = []
 if args.whole_directory:
     for file in os.listdir(args.seismo_file):
@@ -59,3 +65,5 @@ if __name__ == '__main__':
     
     pool = Pool(processes=cpu_count()/2)
     pool.map(run_processing_script, target_files)
+
+shutil.copy(target_files[0], os.path)

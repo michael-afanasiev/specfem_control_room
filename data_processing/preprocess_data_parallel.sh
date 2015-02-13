@@ -36,20 +36,17 @@ myEvent=${myEvent##*/}
 
 echo "PREPROCESSING: $myEvent\n\n"
 
-# Move to the raw data directory, extract the data, and kick out the rawData.tar.
+# # Move to the raw data directory, extract the data, and kick out the rawData.tar.
 cd $dataDir/$myEvent/raw
-tar -xvf rawData.tar
-mv rawData.tar ../
-
-# Remove all funny files.
-rm -f *[1-9]* *LH*
+tar -xvf data.tar
+rm data.tar
 
 # Run the preprocessing.
-aprun -n 1 -N 1 -d 8 lasif preprocess_data $iteration_name $myEvent
+aprun -n 1 -N 1 -d 8 lasif preprocess_data $iteration_name $myEvent --read_only_caches
 
-# Re-tar the raw files.
+# # Re-tar the raw files.
+tar -cvf data.tar
 rm -f *.mseed
-mv ../rawData.tar ./
 
 # Change back to event data directory.
 cd ../
@@ -58,8 +55,8 @@ cd ../
 for f in ./preprocessed*; do
   if [ -d "$f" ]; then
     cd $f
-    if [ ! -e ./preprocessedData.tar ]; then
-      tar -cvf preprocessedData.tar *.mseed
+    if [ ! -e ./data.tar ]; then
+      tar -cvf ./data.tar *.mseed
       rm -f *.mseed
       cd ../
       rsync -av $f $lasif_base_dir/DATA/$myEvent/
