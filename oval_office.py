@@ -466,8 +466,6 @@ def destroy_all_but_raw():
                     if os.path.exists(os.path.join('raw', 
                         'preprocessedData.tar')):
                         os.remove(os.path.join('raw', 'preprocessedData.tar'))
-#                if 'cache' in datadir:
-#                    os.remove(datadir)
                 if 'raw' not in datadir:
                     if os.path.isdir(datadir):
                         shutil.rmtree(datadir)
@@ -489,11 +487,7 @@ def destroy_all_but_raw():
             
     os.chdir(os.path.join(p['lasif_path'], 'DATA'))
     clean_all_processed_data()
-    
-#    os.chdir(os.path.join(p['lasif_path'], 'CACHE'))
-#    for file in os.listdir('./'):
-#        os.remove(file)
-    
+        
     os.chdir(os.path.join(p['lasif_path'], 'SYNTHETICS'))
     clean_all_synthetics()
         
@@ -502,15 +496,15 @@ def destroy_all_but_raw():
     
     os.chdir(os.path.join(lasif_scratch_dir, 'DATA'))
     clean_all_processed_data()
-    
-#    os.chdir(os.path.join(lasif_scratch_dir, 'CACHE'))
-#    for file in os.listdir('./'):
-#        os.remove(file)
 
     os.chdir(os.path.join(lasif_scratch_dir, 'SYNTHETICS'))
     clean_all_synthetics()
     
 def unpack_mseed():
+    """
+    Unpacks the tarred seismogram files for a single event. This is useful for
+    using the misfit gui to check things out.
+    """
     
     if not args.event_name:
         raise ParameterError("Need to specify event name with this option.")
@@ -616,6 +610,32 @@ def select_windows(first_job, last_job):
         + '\n')
 
     subprocess.Popen(['rsync', '-av', lasif_scratch_dir, lasif_path]).wait()
+    
+def build_all_caches():
+    """
+    Submits a job to build all the LASIF caches. Useful because this can take a
+    long time.
+    """
+    
+    # Determine if we can run the script.
+    try:
+        os.chdir('./components')
+    except OSError:
+        raise WrongDirectoryError("You're not in the control room directory.")
+        
+    # # Sync lasif to the scratch directory.
+    # sync_LASIF_to_scratch()
+    
+    # Get lasif scratch directory name.
+    lasif_dirname = os.path.basename(p['lasif_path'])
+    lasif_scratch_dir = os.path.join(p['scratch_path'], lasif_dirname)
+    
+    # Submit job.
+    subprocess.Popen(['sbatch', 'build_lasif_caches.sbatch', 
+                      p['lasif_path'], lasif_scratch_dir]).wait()
+                      
+    # # Backwards mirror.
+    # sync_scratch_to_LASIF()
                           
 def process_synthetics(first_job, last_job):
     """
@@ -675,6 +695,8 @@ parser.add_argument('--unpack_mseed', action='store_true',
                     help='Unpack tarred seismograms for a given event')
 parser.add_argument('--select_windows', action='store_true',
                     help='Unpack tarred seismograms for a given event')                    
+parser.add_argument('--build_all_caches', action='store_true',
+                    help='Build all cache files for LASIF in serial')                                        
 parser.add_argument('--event_name', type=str, help='Event name for use with '
                     '--unpack_mseed')                               
 parser.add_argument('--distribute_adjoint_sources', 
@@ -726,3 +748,5 @@ elif args.distribute_adjoint_sources:
     distribute_adjoint_sources()
 elif args.select_windows:
     select_windows(args.first_job, args.last_job)
+elif args.build_all_caches:
+    build_all_caches()
